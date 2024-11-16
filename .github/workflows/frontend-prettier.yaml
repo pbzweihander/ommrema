@@ -1,0 +1,24 @@
+name: frontend-prettier
+
+on:
+  push:
+    branches:
+    - main
+  pull_request:
+
+jobs:
+  prettier:
+    runs-on: ubuntu-latest
+    container: node:20
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/cache@v4
+      with:
+        path: node_modules
+        key: frontend-yarn-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+        restore-keys: |
+          frontend-yarn-${{ runner.os }}-
+    - name: Install dependencies
+      run: yarn install --fronzen-lockfile
+    - name: Check formatting
+      run: yarn prettier:check
