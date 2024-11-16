@@ -14,7 +14,7 @@ pub struct Repository {
 pub struct References {
     #[serde(rename = "@count")]
     pub count: usize,
-    #[serde(default)]
+    #[serde(default, rename = "mod")]
     pub mods: Vec<Mod>,
 }
 

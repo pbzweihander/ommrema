@@ -21,7 +21,17 @@ use crate::{
     types::{Mod, References, Repository},
 };
 
+#[poem::handler]
+async fn get_username(user: Option<User>) -> Result<String, StatusCode> {
+    if let Some(user) = user {
+        Ok(user.username)
+    } else {
+        Err(StatusCode::UNAUTHORIZED)
+    }
+}
+
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ModResp {
     name: String,
     last_modified: DateTime<Utc>,
@@ -29,8 +39,8 @@ struct ModResp {
 }
 
 #[poem::handler]
-#[tracing::instrument]
-async fn list_mods(_: User) -> Result<Json<Vec<ModResp>>, (StatusCode, eyre::Report)> {
+#[tracing::instrument(skip_all, fields(user = _user.username))]
+async fn list_mods(_user: User) -> Result<Json<Vec<ModResp>>, (StatusCode, eyre::Report)> {
     let mut output = Vec::new();
     let mut stream = OBJECT_STORE.list(None);
     while let Some(meta) = stream.try_next().await.wrap_resp_err(
@@ -38,6 +48,9 @@ async fn list_mods(_: User) -> Result<Json<Vec<ModResp>>, (StatusCode, eyre::Rep
         "failed to read object store",
     )? {
         if let Some(name) = meta.location.filename() {
+            if name == "default.omx" {
+                continue;
+            }
             output.push(ModResp {
                 name: name.to_string(),
                 last_modified: meta.last_modified,
@@ -60,6 +73,10 @@ async fn reindex() -> eyre::Result<()> {
         .wrap_err("failed to read object store")?
     {
         if let Some(name) = meta.location.filename() {
+            if name == "default.omx" {
+                continue;
+            }
+
             let res = OBJECT_STORE
                 .get(&meta.location)
                 .await
@@ -90,7 +107,7 @@ async fn reindex() -> eyre::Result<()> {
             let hash = hasher.finish();
 
             mods.push(Mod {
-                ident: name.to_string(),
+                ident: name.strip_suffix(".ozp").unwrap_or(name).to_string(),
                 file: meta.location.to_string(),
                 bytes: meta.size,
                 xxhsum: format!("{:x}", hash),
@@ -113,7 +130,7 @@ async fn reindex() -> eyre::Result<()> {
         quick_xml::se::to_string(&repository).wrap_err("failed to serialize repository index")?;
 
     OBJECT_STORE
-        .put(&object_store::path::Path::from("index.omx"), index.into())
+        .put(&object_store::path::Path::from("default.omx"), index.into())
         .await
         .wrap_err("failed to put index to object store")?;
 
@@ -121,17 +138,17 @@ async fn reindex() -> eyre::Result<()> {
 }
 
 #[poem::handler]
-#[tracing::instrument]
-async fn request_reindex(_: User) -> Result<(), (StatusCode, eyre::Report)> {
+#[tracing::instrument(skip_all, fields(user = _user.username))]
+async fn request_reindex(_user: User) -> Result<(), (StatusCode, eyre::Report)> {
     reindex()
         .await
         .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))
 }
 
 #[poem::handler]
-#[tracing::instrument]
+#[tracing::instrument(skip(_user, body), fields(user = _user.username))]
 async fn upload_mod(
-    _: User,
+    _user: User,
     Path(name): Path<String>,
     body: Bytes,
 ) -> Result<(), (StatusCode, eyre::Report)> {
@@ -152,6 +169,7 @@ async fn upload_mod(
 
 pub fn create_route() -> Route {
     Route::new()
+        .at("/username", poem::get(get_username))
         .at("/mod", poem::get(list_mods))
         .at("/reindex", poem::post(request_reindex))
         .at("/mod/:name", poem::post(upload_mod))
