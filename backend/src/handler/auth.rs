@@ -1,12 +1,12 @@
+use chrono::{Duration, Utc};
 use oauth2::TokenResponse;
 use once_cell::sync::Lazy;
 use poem::{
     http::{header, HeaderMap, StatusCode},
-    web::{Query, Redirect},
-    Route,
+    web::{headers, Query, Redirect, TypedHeader},
+    FromRequest, IntoResponse, Route,
 };
 use serde::{Deserialize, Serialize};
-use time::{Duration, OffsetDateTime};
 
 use crate::{
     config::{CONFIG, HTTP_CLIENT},
@@ -31,6 +31,28 @@ static OAUTH_CLIENT: Lazy<oauth2::basic::BasicClient> = Lazy::new(|| {
 pub struct User {
     pub username: String,
     pub exp: i64,
+}
+
+impl<'a> FromRequest<'a> for User {
+    async fn from_request(
+        req: &'a poem::Request,
+        body: &mut poem::RequestBody,
+    ) -> poem::Result<Self> {
+        let cookies = TypedHeader::<headers::Cookie>::from_request(req, body).await?;
+        let session_cookie = cookies
+            .get("session")
+            .ok_or_else(|| poem::Error::from_response(Redirect::see_other("/").into_response()))?;
+
+        let mut jwt_validation = jsonwebtoken::Validation::default();
+        jwt_validation.validate_exp = true;
+        let user_data =
+            jsonwebtoken::decode::<User>(session_cookie, &CONFIG.jwt_secret.1, &jwt_validation)
+                .map_err(|_| {
+                    poem::Error::from_response(Redirect::see_other("/").into_response())
+                })?;
+        let user = user_data.claims;
+        Ok(user)
+    }
 }
 
 #[poem::handler]
@@ -125,8 +147,8 @@ async fn get_authorized(
         ));
     }
 
-    let now = OffsetDateTime::now_utc();
-    let exp = (now + Duration::days(1)).unix_timestamp();
+    let now = Utc::now();
+    let exp = (now + Duration::days(1)).timestamp();
 
     let user = User {
         username: user.username,

@@ -10,6 +10,12 @@ pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
         .build()
         .unwrap()
 });
+pub static OBJECT_STORE: Lazy<object_store::aws::AmazonS3> = Lazy::new(|| {
+    object_store::aws::AmazonS3Builder::from_env()
+        .with_bucket_name(CONFIG.s3_bucket_name.clone())
+        .build()
+        .expect("failed to build S3 object store")
+});
 
 fn deserialize_jwt_secret<'de, D>(
     d: D,
@@ -26,6 +32,8 @@ where
 
 #[derive(Clone, Deserialize)]
 pub struct Config {
+    pub title: String,
+
     pub public_url: Url,
 
     #[serde(deserialize_with = "deserialize_jwt_secret")]
@@ -35,4 +43,6 @@ pub struct Config {
     pub discord_client_secret: String,
     pub discord_guild_id: String,
     pub discord_guild_role_id: String,
+
+    pub s3_bucket_name: String,
 }

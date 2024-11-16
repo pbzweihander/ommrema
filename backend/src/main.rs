@@ -1,7 +1,8 @@
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
 mod config;
 mod handler;
+mod types;
+
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() {
