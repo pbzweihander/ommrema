@@ -1,0 +1,15 @@
+{
+  "name": "ommrema",
+  "workspaces": [
+    "frontend"
+  ],
+  "private": true,
+  "scripts": {
+    "dev": "cd frontend && yarn dev",
+    "build": "cd frontend && yarn build",
+    "lint": "cd frontend && yarn lint",
+    "prettier": "cd frontend && yarn prettier",
+    "prettier:check": "cd frontend && yarn prettier:check",
+    "preview": "cd frontend && yarn preview"
+  }
+}
