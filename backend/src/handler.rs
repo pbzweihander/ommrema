@@ -1,4 +1,8 @@
-use poem::{endpoint::EmbeddedFilesEndpoint, Route};
+mod auth;
+mod error;
+mod middleware;
+
+use poem::{endpoint::EmbeddedFilesEndpoint, EndpointExt, Route};
 use rust_embed::Embed;
 
 #[derive(Embed)]
@@ -6,5 +10,9 @@ use rust_embed::Embed;
 struct Frontend;
 
 pub fn create_route() -> Route {
-    Route::new().nest("/", EmbeddedFilesEndpoint::<Frontend>::new())
+    let auth = self::auth::create_route();
+
+    Route::new()
+        .nest("/auth", auth.with(self::middleware::Tracing))
+        .nest("/", EmbeddedFilesEndpoint::<Frontend>::new())
 }
