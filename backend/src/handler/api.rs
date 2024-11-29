@@ -1,13 +1,12 @@
 use std::hash::Hasher;
 
-use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use eyre::Context;
 use futures_util::TryStreamExt;
 use object_store::{GetResultPayload, ObjectStore};
 use poem::{
     http::StatusCode,
-    web::{Json, Path},
+    web::{Json, Path, TempFile},
     Route,
 };
 use serde::Serialize;
@@ -146,21 +145,41 @@ async fn request_reindex(_user: User) -> Result<(), (StatusCode, eyre::Report)> 
 }
 
 #[poem::handler]
-#[tracing::instrument(skip(_user, body), fields(user = _user.username))]
+#[tracing::instrument(skip(_user, file), fields(user = _user.username))]
 async fn upload_mod(
     _user: User,
     Path(name): Path<String>,
-    body: Bytes,
+    mut file: TempFile,
 ) -> Result<(), (StatusCode, eyre::Report)> {
     let name = name.strip_suffix(".ozp").unwrap_or(&name);
     let filename = format!("{name}.ozp");
-    OBJECT_STORE
-        .put(&object_store::path::Path::from(filename), body.into())
+    let mut upload = OBJECT_STORE
+        .put_multipart(&object_store::path::Path::from(filename))
         .await
         .wrap_resp_err(
             StatusCode::INTERNAL_SERVER_ERROR,
             "failed to put object to object store",
         )?;
+
+    loop {
+        let mut buf = bytes::BytesMut::with_capacity(10 * 1024 * 1024);
+        file.read_buf(&mut buf).await.wrap_resp_err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to read from temp file",
+        )?;
+        let buf = buf.freeze();
+        if buf.is_empty() {
+            break;
+        }
+        upload.put_part(buf.into()).await.wrap_resp_err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to upload to object store",
+        )?;
+    }
+    upload.complete().await.wrap_resp_err(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "failed to upload to object store",
+    )?;
 
     reindex()
         .await
