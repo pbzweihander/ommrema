@@ -161,25 +161,43 @@ async fn upload_mod(
             "failed to put object to object store",
         )?;
 
-    loop {
-        let mut buf = bytes::BytesMut::with_capacity(10 * 1024 * 1024);
-        file.read_buf(&mut buf).await.wrap_resp_err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to read from temp file",
-        )?;
-        let buf = buf.freeze();
-        if buf.is_empty() {
-            break;
+    const CHUNK_SIZE: usize = 10 * 1024 * 1024;
+    'outer: loop {
+        let mut buf = bytes::BytesMut::with_capacity(CHUNK_SIZE);
+        let mut total_read = 0;
+
+        while total_read < CHUNK_SIZE {
+            let n = file
+                .read(&mut buf[total_read..CHUNK_SIZE])
+                .await
+                .wrap_resp_err(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to read from temp file",
+                )?;
+            if n == 0 {
+                let buf = buf.freeze();
+                if !buf.is_empty() {
+                    upload.put_part(buf.into()).await.wrap_resp_err(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to upload last part to object store",
+                    )?;
+                }
+                upload.complete().await.wrap_resp_err(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to finalize uploading to object store",
+                )?;
+
+                break 'outer;
+            }
+            total_read += n;
         }
+
+        let buf = buf.freeze();
         upload.put_part(buf.into()).await.wrap_resp_err(
             StatusCode::INTERNAL_SERVER_ERROR,
             "failed to upload to object store",
         )?;
     }
-    upload.complete().await.wrap_resp_err(
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "failed to finalize uploading to object store",
-    )?;
 
     reindex()
         .await
