@@ -178,7 +178,7 @@ async fn upload_mod(
     }
     upload.complete().await.wrap_resp_err(
         StatusCode::INTERNAL_SERVER_ERROR,
-        "failed to upload to object store",
+        "failed to finalize uploading to object store",
     )?;
 
     reindex()

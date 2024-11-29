@@ -80,21 +80,21 @@ impl<E: Endpoint> Endpoint for TracingEndpoint<E> {
                     if status.is_server_error() {
                         tracing::error!(
                             %status,
-                            %error,
+                            ?error,
                             duration = ?duration,
                             "error"
                         );
                     } else if status.is_client_error() {
                         tracing::warn!(
                             %status,
-                            %error,
+                            ?error,
                             duration = ?duration,
                             "error"
                         );
                     } else {
                         tracing::debug!(
                             %status,
-                            %error,
+                            ?error,
                             duration = ?duration,
                             "error"
                         );
